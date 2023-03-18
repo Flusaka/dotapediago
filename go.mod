@@ -1,4 +1,4 @@
-module dotapediago
+module github.com/Flusaka/dotapediago
 
 go 1.19
 
