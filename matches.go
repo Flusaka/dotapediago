@@ -16,7 +16,7 @@ const (
 
 	MatchStatusUpcoming MatchStatus = 0
 	MatchStatusOngoing  MatchStatus = 1
-	MatchStatusComplete MatchStatus = 2
+	//MatchStatusComplete MatchStatus = 2
 )
 
 type Match struct {
@@ -35,6 +35,10 @@ func (client *Client) GetMatches() ([]*Match, error) {
 }
 
 func (client *Client) GetMatchesUntil(maxStartTime time.Time) ([]*Match, error) {
+	return client.GetMatchesBetween(time.Now(), maxStartTime)
+}
+
+func (client *Client) GetMatchesBetween(minStartTime time.Time, maxStartTime time.Time) ([]*Match, error) {
 	doc, err := client.getDocument(matchesEndpoint)
 
 	if err != nil {
@@ -43,22 +47,23 @@ func (client *Client) GetMatchesUntil(maxStartTime time.Time) ([]*Match, error) 
 
 	// This is a little awkward, and works with how the current HTML structure is, but might need reworking, need to investigate data queries
 	matchesGroups := doc.Find(".matches-list").Children().Last().Children()
-	// First one is _all_ matches of any "prestige"
-	matches := client.parseMatches(matchesGroups.Eq(0), maxStartTime)
+
+	// Let's get all "featured" matches that are ongoing or upcoming
+	matches := client.parseMatches(matchesGroups.Eq(1), minStartTime, maxStartTime)
 	return matches, nil
 }
 
-func (client *Client) parseMatches(table *goquery.Selection, maxStartTime time.Time) []*Match {
+func (client *Client) parseMatches(table *goquery.Selection, minStartTime time.Time, maxStartTime time.Time) []*Match {
 	var matches []*Match
 	table.Find(".infobox_matches_content").Each(func(i int, selection *goquery.Selection) {
-		if match, shouldAdd := client.parseMatch(selection, maxStartTime); shouldAdd {
+		if match, shouldAdd := client.parseMatch(selection, minStartTime, maxStartTime); shouldAdd {
 			matches = append(matches, match)
 		}
 	})
 	return matches
 }
 
-func (client *Client) parseMatch(row *goquery.Selection, maxStartTime time.Time) (*Match, bool) {
+func (client *Client) parseMatch(row *goquery.Selection, minStartTime time.Time, maxStartTime time.Time) (*Match, bool) {
 	// Parse the teams first
 	status := MatchStatusUpcoming
 
@@ -72,7 +77,7 @@ func (client *Client) parseMatch(row *goquery.Selection, maxStartTime time.Time)
 	if exists {
 		startTimestamp, _ := strconv.ParseInt(startTimestampStr, 10, 64)
 		startTime = time.Unix(startTimestamp, 0)
-		if startTime.After(maxStartTime) {
+		if startTime.Before(minStartTime) || startTime.After(maxStartTime) {
 			return nil, false
 		}
 		if startTime.Before(time.Now()) {
